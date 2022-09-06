@@ -15,6 +15,7 @@ import { IO, Logger } from "@zowe/imperative";
 import { CoreUtils, TRANSFER_TYPE_ASCII, TRANSFER_TYPE_BINARY } from "./CoreUtils";
 import { IAllocateDataSetOption, IDownloadDataSetOption, IUploadDataSetOption, TRACK } from "./DataSetInterface";
 import { StreamUtils } from "./StreamUtils";
+import { EncodingUtils } from "./EncodingUtils";
 
 export class DataSetUtils {
 
@@ -102,7 +103,14 @@ export class DataSetUtils {
                 dsn, option.localFile, transferType);
             IO.createDirsSyncFromFilePath(option.localFile);
             const writable = fs.createWriteStream(option.localFile);
-            length = await StreamUtils.streamToStream(estimatedSize, stream, writable, option.progress);
+            if (transferType === TRANSFER_TYPE_ASCII) {
+                let rbuffer = await StreamUtils.streamToBuffer(estimatedSize, stream, option.progress);
+                rbuffer = EncodingUtils.convert(rbuffer, "UTF-8", "Latin_1");
+                length = rbuffer.byteLength;
+                writable.write(rbuffer);
+            } else {
+                length = await StreamUtils.streamToStream(estimatedSize, stream, writable, option.progress);
+            }
         } else {
             this.log.debug("Downloading data set '%s' in transfer mode '%s'", dsn, transferType);
             buffer = await StreamUtils.streamToBuffer(estimatedSize, stream, option.progress);
@@ -131,6 +139,7 @@ export class DataSetUtils {
         }
         if (transferType === TRANSFER_TYPE_ASCII) {
             content = CoreUtils.addCarriageReturns(content.toString());
+            content = EncodingUtils.convert(content, "Latin_1", "UTF-8");
         }
         await connection.uploadDataset(content, "'" + dsn + "'", transferType, option.dcb);
     }
